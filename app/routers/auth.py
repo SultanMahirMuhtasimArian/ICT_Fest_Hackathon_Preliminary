@@ -35,12 +35,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         .first()
     )
     if existing is not None:
-        return {
-            "user_id": existing.id,
-            "org_id": org.id,
-            "username": existing.username,
-            "role": existing.role,
-        }
+        # Rule 15: Must raise 409 error instead of returning user details
+        raise AppError(409, "USERNAME_TAKEN", "Username already taken within this organization")
 
     user = User(
         org_id=org.id,
@@ -83,9 +79,14 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     data = decode_token(payload.refresh_token)
     if data.get("type") != "refresh":
         raise AppError(401, "UNAUTHORIZED", "Wrong token type")
+    
     user = db.query(User).filter(User.id == int(data["sub"])).first()
     if user is None:
         raise AppError(401, "UNAUTHORIZED", "Unknown user")
+        
+    # Rule 8: Immediately invalidate the presented refresh token to enforce single-use
+    revoke_access_token(data)
+    
     return {
         "access_token": create_access_token(user),
         "refresh_token": create_refresh_token(user),
